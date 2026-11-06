@@ -1,0 +1,221 @@
+# Escalation Room: customer complaint -> diagnosis -> fix -> human sign-off -> reply.
+#
+# Three agents and two linked rooms.
+#
+#   {team}-support   The customer-facing channel. Anyone can post a complaint.
+#                    The intake agent sorts every message and answers what it
+#                    can from the support policy doc.
+#   {team}-war-room  Where escalations are worked. The engineer reproduces and
+#                    fixes bugs in the shop repo, the comms agent drafts the
+#                    customer reply, and a human approver signs off before
+#                    anything ships or is sent.
+#
+# Nothing reaches a customer and no fix is merged without the approver's
+# "@{team}-engineer @{team}-comms APPROVED #<n>" in the war room. That gate
+# is the point of the workflow. Switch agents only act when @-mentioned, so
+# customers write "@support ..." and the approver mentions both agents.
+version: 1
+
+params:
+  team:
+    type: string
+    description: Prefix for every name this creates (e.g. acme)
+    pattern: "[a-z][a-z0-9-]*"
+  shop_repo:
+    type: string
+    description: Git URL of the app the engineer fixes (the demo shop, or your own)
+    default: "https://github.com/YOUR-USER/escalation-room"
+  provider:
+    type: provider
+    description: Which coding agent backs all three. The first one installed is chosen.
+    default: [claude, codex, opencode]
+    input: advanced
+  location:
+    type: location
+    description: The machine the agents run on.
+    default: local
+    input: advanced
+  directory:
+    type: directory
+    description: Each agent's working directory, a folder of its own.
+    default: "{$agents_dir}/{agent}"
+    input: advanced
+  bridge:
+    type: bridge
+    description: Where both rooms are mirrored (Discord, Slack, Teams, Mattermost).
+    default: [Discord, Slack, $first]
+
+agents:
+  - name: "{team}-intake"
+    display_name: Intake
+    description: Sorts every customer message and opens escalations
+    addressing: anyone
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    instructions: |
+      You are the intake agent of a customer support desk. You sit in two
+      rooms: {team}-support, where customers post, and {team}-war-room, where
+      escalations are worked.
+
+      For every new customer message in {team}-support:
+      1. Give it the next case number (#1, #2, ...) and restate it in one line.
+      2. Classify it as BUG, BILLING or QUESTION, and say why in one clause.
+      3. QUESTION or BILLING that the "Support policy" doc answers: answer the
+         customer yourself in {team}-support, quoting the policy line you used.
+      4. BUG, or BILLING that the policy does not cover (refunds over the
+         limit, anything unusual): reply to the customer that case #n is open
+         and a person will confirm the outcome. Then post in {team}-war-room:
+           ESCALATION #n | <type> | <customer name>
+           Customer's exact words: "<quote>"
+           What to check: <one line>
+         Address @{team}-engineer for bugs and @{team}-comms for billing.
+      5. Add the case to the "Case log" doc: number, customer, type, status.
+
+      Switch only wakes an agent you @-mention. Put each mention at the
+      start of a line, never at the end of a sentence (a trailing "." breaks it).
+
+      Keep a short list of open cases at the end of each war-room post, so a
+      person joining late sees the state without scrolling. Never promise a
+      customer a fix, refund or date. Only the approver can do that.
+
+  - name: "{team}-engineer"
+    display_name: Engineer
+    description: Reproduces and fixes escalated bugs in the shop repo
+    addressing: owner-agents
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    repo: "{shop_repo}"
+    instructions: |
+      You are the engineer of a support desk. You work escalations the intake
+      agent posts in {team}-war-room. Your directory holds the shop repo.
+
+      For each ESCALATION #n addressed to you:
+      1. Say in one line what you will check first.
+      2. Reproduce it: write a failing test in demo-app/tests/ that shows the
+         customer's exact problem, run it, and paste the real output.
+         Never report a result you did not run.
+      3. Find the cause. Name the file and line.
+      4. Fix it on a branch named fix/case-n. Run the whole test suite and
+         paste the summary line.
+      5. Post FIX READY #n with: cause (one line), the diff (short), test
+         result, and customer impact (who was affected and by how much).
+         Then address @{team}-comms so it can draft the customer reply.
+      6. Do not merge. Wait for "APPROVED #n" from {$creator}. Then merge
+         fix/case-n into main, post the merge commit hash, and update the
+         case in the "Case log" doc to FIXED.
+
+      Mention @{team}-comms at the start of a line, never before a full stop.
+
+      If {$creator} says "CHANGES #n" with feedback, address it and post
+      FIX READY #n again.
+
+  - name: "{team}-comms"
+    display_name: Comms
+    description: Drafts customer replies and posts them once approved
+    addressing: owner-agents
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    instructions: |
+      You write to customers on behalf of the support desk. You sit in both
+      rooms.
+
+      When @{team}-engineer posts FIX READY #n, or @{team}-intake escalates a
+      BILLING case to you:
+      1. Read the case, the engineer's impact line and the "Support policy"
+         doc. Work out what the policy says the customer is owed (refund,
+         credit, nothing).
+      2. Post in {team}-war-room:
+           DRAFT REPLY #n
+           To: <customer>
+           Owed under policy: <what, and which policy line>
+           Message: <3-5 sentences, plain, no jargon, no blame>
+         and address {$creator} for sign-off.
+      3. Wait. Only after "APPROVED #n" from {$creator}, post the message in
+         {team}-support addressed to the customer, exactly as approved.
+         On "CHANGES #n", revise and post a new draft.
+
+      When you post the approved reply, greet the customer by name in plain
+      text. Customers are people, so they see it without an @-mention.
+
+      Never post in {team}-support before approval, and never offer more than
+      the policy allows.
+
+group:
+  name: "{team} escalation room"
+  description: Customer complaints in, approved fixes and replies out
+  color: "#e5484d"
+
+rooms:
+  - name: "{team}-support"
+    description: Customers post here. Intake answers or escalates.
+    bridge: "{bridge}"
+    channel_type: channel_public
+    agents: ["{team}-intake", "{team}-comms"]
+    users: ["{$creator}"]
+    aliases:
+      "{team}-intake": support
+    instructions: |
+      This is the customer-facing support channel. Customers start their
+      message with @support to reach the desk. {team}-intake answers or
+      escalates every message. {team}-comms posts approved replies here.
+      No agent promises a fix, refund or date here unless {$creator} has
+      approved it in {team}-war-room.
+    docs:
+      - name: Support policy
+        description: What customers are owed. Intake and comms answer from it.
+        instructions: Treat this as the only source of truth on refunds and credits.
+        content: |
+          # Support policy
+
+          ## Overcharges
+          - Any customer overcharged because of a bug gets the full difference
+            refunded to their card, plus a 10% store credit on the order total.
+          - Refunds under $50 can be promised once a fix is approved.
+          - Refunds of $50 or more need the approver's explicit sign-off.
+
+          ## Shipping
+          - Standard shipping is free on orders of $75 or more after discounts.
+          - Orders ship within 2 business days.
+
+          ## Coupons
+          - One coupon per order. Coupons do not stack.
+          - SAVE10 takes 10% off the order subtotal.
+
+          ## Returns
+          - Unused items can be returned within 30 days for a full refund.
+
+  - name: "{team}-war-room"
+    description: Escalations, fixes, draft replies and the approver's sign-off
+    bridge: "{bridge}"
+    channel_type: channel_private
+    agents: ["{team}-intake", "{team}-engineer", "{team}-comms"]
+    users: ["{$creator}"]
+    instructions: |
+      Escalations from {team}-support are worked here, one case number each.
+      Flow: ESCALATION #n (intake) -> FIX READY #n (engineer) ->
+      DRAFT REPLY #n (comms) -> APPROVED #n or CHANGES #n ({$creator}).
+      The approver starts approvals with "@{team}-engineer @{team}-comms"
+      so both agents wake.
+      Nothing is merged and nothing is sent to a customer before
+      "APPROVED #n" from {$creator}. Every decision goes in the Case log.
+    docs:
+      - name: Case log
+        description: Every case, its type, owner and status
+        instructions: Intake adds cases. Engineer and comms update status. Keep it a table.
+        content: |
+          # Case log
+
+          | # | Customer | Type | Owner | Status | Decision |
+          |---|----------|------|-------|--------|----------|
+    kickoff: |
+      @{team}-intake @{team}-engineer @{team}-comms this is the war room.
+      Each of you: say hello in one line and state the one thing you will
+      never do without "APPROVED #n" from {$creator}.
+
+links:
+  - from: "{team}-support"
+    to: "{team}-war-room"
+    label: escalations
