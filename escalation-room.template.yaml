@@ -42,8 +42,9 @@ params:
     input: advanced
   bridge:
     type: bridge
-    description: Where both rooms are mirrored (Discord, Slack, Teams, Mattermost).
-    default: [Discord, Slack, $first]
+    description: Where both rooms are mirrored (Mattermost, Discord, Slack, Teams). Leave empty for Switch-only rooms in Console.
+    default: [Mattermost, Discord, Slack, $first]
+    required: false
 
 agents:
   - name: "{team}-intake"

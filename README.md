@@ -4,9 +4,9 @@
 
 Built for **Flip the Switch** - Track 01: Best Business Workflow.
 
-![demo](assets/demo.gif) <!-- replace with your GIF or video link -->
+[![Watch the demo](assets/thumbnail.png)](https://youtu.be/2IY_HKrFonw)
 
-**Video:** <!-- YouTube / Loom link -->
+**▶ Demo video:** https://youtu.be/2IY_HKrFonw
 
 ---
 
@@ -16,7 +16,7 @@ Support teams already have capable AI agents. The trouble is that they're stuck 
 
 ## What Escalation Room does
 
-One Switch template sets up a working support team inside your chat app:
+One Switch template sets up a working support team inside your chat app. The demo runs in **Telegram**: `acme-support` is the customer group and `acme-war-room` is the team's private group.
 
 | Who | Room(s) | Job |
 |-----|---------|-----|
@@ -43,35 +43,32 @@ flowchart LR
 Take Switch away and the workflow stops working:
 
 - **Rooms are the shared context.** All three agents and the people read the same room history. The engineer sees the customer's exact words without anyone copying them over.
-- **Two linked rooms, different audiences.** Customers only see `#support`. Diagnosis, diffs and draft replies stay in the private `#war-room`. This uses Switch room groups and `links:`.
+- **Two rooms, different audiences.** Customers only see `acme-support`. Diagnosis, diffs and draft replies stay in the private `acme-war-room`. Agents join rooms through template `room` params (`join:`); on Slack/Discord/Mattermost the other template creates both rooms as a linked room group.
 - **Mentions and aliases route the work.** Customers write `@support` (a room alias for intake). Agents wake each other by name, and nobody else reacts.
 - **Addressing rules are the guardrail.** Intake is `addressing: anyone`, so customers can talk to it. Engineer and comms are `owner-agents`, so a customer can't tell the engineer to merge something.
-- **Room docs are shared memory.** Intake and comms answer from the **Support policy** doc. Every agent updates the **Case log** doc.
+- **Shared rules, shared memory.** Every agent works from the same support policy, and the room history is the case record anyone can scroll.
 - **Agents hand off to each other by name** (`@acme-engineer`, `@acme-comms`) in the same thread, the way teammates do.
 - **The human gate lives in chat.** Approving is just typing a message, from your phone if need be.
-- **One YAML file, any agent, any chat.** The `provider` and `bridge` params let anyone run it with Claude Code, Codex or OpenCode, on Discord, Slack, Teams or Mattermost.
+- **One YAML file, any agent, any chat.** The `provider` param lets anyone run it with Claude Code, Codex or OpenCode. Use the Telegram template for Telegram, or the main template for Mattermost, Discord, Slack or Teams.
 
-## Run it yourself (about 10 minutes)
+## Run it yourself in Telegram (about 15 minutes)
 
-**You need:** [Switch Console](https://github.com/sandbox-quantum/switch) (desktop app, runs a local server in Docker), Docker, one coding agent signed in (Claude Code, Codex or OpenCode), and a Discord server where you can add a bot (or Slack/Teams/Mattermost).
+**You need:** [Switch Console](https://github.com/sandbox-quantum/switch/releases/latest) (desktop app), Node.js 20+, Claude Code signed in (or Codex / OpenCode), and a Telegram account with a @username.
 
-1. **Fork this repo**, then tag the buggy starting point:
-   ```bash
-   git tag demo-start && git push --tags
-   ```
-2. **Install Switch Console** and connect your chat app (Console -> Messaging apps). Follow the Switch getting-started docs for Discord.
-3. **Import the template:** Console -> Templates -> Import -> `escalation-room.template.yaml`.
-4. **Create from template:**
-   - `team`: e.g. `acme`
-   - `shop_repo`: your fork's URL
-   - `bridge`: Discord
-   - Leave the rest at their defaults (you're the approver).
-5. Two channels appear, `#acme-support` and `#acme-war-room`, and the three agents say hello.
-6. **Post a complaint** in `#acme-support` (ready-made ones are in [DEMO.md](DEMO.md)), for example:
-   > @support I used SAVE10 on cable $15, headphones $60 and a case $25, and got charged $106.38?
-7. Watch the war room, then type `@acme-engineer @acme-comms APPROVED #1`.
+1. **Fork this repo** (the engineer clones it and fixes the planted bugs).
+2. **Make a Telegram bot:** message @BotFather, send `/newbot`, keep the token. Then `/mybots` → your bot → Bot Settings → **Group Privacy → Turn off**.
+3. **Connect it:** Switch Console → Home → **Connect** → Telegram → paste the token and bot username.
+4. **Create two Telegram groups**, `acme-support` and `acme-war-room`, and add the bot to both. Switch turns each into a room. Send a message in one, then Home → **Link account** → *This is me* (the engineer and comms only take orders from you).
+5. **Import the template:** Templates → Import a template → `escalation-room.telegram.template.yaml`.
+6. **Use template:** team `acme`, Customer support group `acme-support`, War room group `acme-war-room`, shop_repo = your fork. **Create agents.**
+7. **Try it.** In `acme-support`:
+   > @acme-intake Hi, I used SAVE10 on cable $15, headphones $60 and a case $25 and got charged $106.38?
 
-> **Tip:** Switch agents only act when @-mentioned. Customers reach intake through the `@support` alias set in the template.
+   Watch `acme-war-room`, then approve: `@acme-engineer @acme-comms APPROVED #1`
+
+> Switch agents only act when @-mentioned. Customers mention `@acme-intake`; approvals mention both agents.
+
+**Using Mattermost, Discord, Slack or Teams instead?** Use `escalation-room.template.yaml`. It creates both rooms for you as a linked room group, with a `@support` alias for customers and shared Support policy / Case log docs. Telegram bots can't create chats, which is why the Telegram template joins groups you made.
 
 ### The demo shop
 
@@ -89,7 +86,8 @@ You can point `shop_repo` at your own app instead. Only the engineer's instructi
 ## Repo layout
 
 ```
-escalation-room.template.yaml   # the whole workflow: 3 agents, 2 linked rooms, 2 docs
+escalation-room.telegram.template.yaml  # Telegram: 3 agents that join your two groups
+escalation-room.template.yaml           # Mattermost/Discord/Slack/Teams: 3 agents, 2 linked rooms, 2 docs
 demo-app/                       # the shop the engineer fixes
   shop/pricing.py               # planted bugs
   tests/test_pricing.py         # baseline tests (pass with the bugs present)
@@ -99,7 +97,10 @@ DEMO.md                         # demo script, customer messages, expected numbe
 
 ## What I learned
 
-<!-- 3-4 honest bullets: what surprised you about rooms/addressing, what broke, what you'd add next -->
+- **Mentions are the routing layer.** Switch agents only wake when @-mentioned, so the escalation protocol (`ESCALATION #n`, `FIX READY #n`, `APPROVED #n`) is built around who gets mentioned when.
+- **Templates make a workflow shareable.** The whole team is one YAML file, and Switch's template linter caught a real mistake before anything ran.
+- **Telegram can't create chats.** Bots can only join groups that exist, so the Telegram template uses `room` params and `join:` instead of creating rooms.
+- **Addressing is a cheap, real guardrail.** `anyone` for intake, `owner-agents` for the engineer and comms: customers can't tell the engineer to merge.
 
 ## What's next
 
@@ -109,4 +110,4 @@ DEMO.md                         # demo script, customer messages, expected numbe
 
 ---
 
-Built by voice with [Wispr Flow](https://wisprflow.ai): prompts, agent instructions and this README were dictated. Scorecard in `assets/wispr-scorecard.png`.
+Parts of this build were dictated with [Wispr Flow](https://wisprflow.ai).
